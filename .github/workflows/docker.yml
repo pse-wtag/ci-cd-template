@@ -91,7 +91,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Java Environment
-        uses: pse-wtag/java-ci-cd-template/.github/actions/java-setup@eab9ecc711576348dafed94089f0afffd2c89106
+        uses: pse-wtag/java-ci-cd-template/.github/actions/java-setup@64f19b438fac11f5642012b97e33d0c1deca9f55
         with:
           java-version: ${{ inputs.java-version }}
           cache-type: ${{ inputs.cache-type }}
