@@ -1,6 +1,6 @@
-# java-cicd-template
+# cicd-template
 
-Centralized CI/CD for Java / Spring Boot (Maven) services.
+Reusable GitHub Actions CI/CD templates for Java (Maven + Spring Boot) projects. Consuming repos call these workflows instead of duplicating pipeline logic. Every job runs behind `step-security/harden-runner` with a configurable egress policy and `disable-sudo: true`, third-party actions are pinned to commit SHAs, checkouts use `persist-credentials: false` unless the job genuinely pushes, and per-job `permissions` are scoped to least privilege.
 
 This repository is a **reusable GitHub Actions template**. Every pipeline stage is a
 self-contained [reusable workflow](https://docs.github.com/en/actions/using-workflows/reusing-workflows)
