@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   pipeline:
-    uses: pse-wtag/java-ci-cd-template/.github/workflows/master-maven-pipeline.yml@main
+    uses: pse-wtag/java-ci-cd-template/.github/workflows/master-java-pipeline.yml@main
     # Forward secrets explicitly. `secrets: inherit` would hand this pipeline your
     # entire secret store, so any secret the template reads in future — including
     # one added by a compromised update — would be readable from your repo.
@@ -179,14 +179,14 @@ flowchart TD
 
 | # | Job | Workflow | Runs when | What it does |
 |---|-----|----------|-----------|--------------|
-| 1 | **build** | `build.yml` | always | Rejects tracked `.env` files, compiles & packages (`clean package -DskipTests`), submits the dependency graph on `push`. |
-| 2 | **lint** | `lint.yml` | always | Verifies code formatting with Spotless (`spotless:check`). |
-| 2 | **unit-tests** | `unit-tests.yml` | always | Runs `mvn test` and publishes a JUnit report. |
-| 2 | **integration-tests** | `integration-tests.yml` | always | Optionally exposes curated `extra-secrets` (never `GITHUB_TOKEN`), runs `mvn verify -Dsurefire.skip=true`, publishes a JUnit report. |
-| 2 | **security** | `security.yml` | always | Three parallel scanners — **CodeQL** SAST (`java-kotlin`, self-skips when Code Scanning is off), **Gitleaks** secret scan, and **Trivy** dependency (SCA) scan that fails on *fixable* HIGH/CRITICAL CVEs. The Trivy vulnerability DB is cached across runs (`actions/cache`). |
+| 1 | **build** | `java-build.yml` | always | Rejects tracked `.env` files, compiles & packages (`clean package -DskipTests`), submits the dependency graph on `push`. |
+| 2 | **lint** | `java-lint.yml` | always | Verifies code formatting with Spotless (`spotless:check`). |
+| 2 | **unit-tests** | `java-unit-tests.yml` | always | Runs `mvn test` and publishes a JUnit report. |
+| 2 | **integration-tests** | `java-integration-tests.yml` | always | Optionally exposes curated `extra-secrets` (never `GITHUB_TOKEN`), runs `mvn verify -Dsurefire.skip=true`, publishes a JUnit report. |
+| 2 | **security** | `java-security.yml` | always | Three parallel scanners — **CodeQL** SAST (`java-kotlin`, self-skips when Code Scanning is off), **Gitleaks** secret scan, and **Trivy** dependency (SCA) scan that fails on *fixable* HIGH/CRITICAL CVEs. The Trivy vulnerability DB is cached across runs (`actions/cache`). |
 | 3 | **tag** | `tag.yml` | PR → `main` | Tags the PR build (`pr-<n>-run-<run>`) and prunes old PR tags (keeps the latest 4). |
-| 3 | **docker-publish** | `docker.yml` | `push`, or same-repo PR (pushes only on `push`) | Builds an OCI image via Spring Boot Buildpacks, **Trivy-scans** it (fails on fixable HIGH/CRITICAL; vuln DB cached via `actions/cache`), emits a **CycloneDX SBOM** artifact, pushes to **GHCR**, **signs** the pushed image with cosign (keyless/OIDC), then prunes old images (keeps the latest 3). |
-| 3 | **verify-image** | `release.yml` | push → `main` | Runs `cosign verify` against the exact **digest** `docker-publish` pushed and signed (not a mutable tag) — asserting a keyless signature whose certificate identity matches `signer-identity-regexp` and whose OIDC issuer is GitHub Actions. Fails the release stage if the signature is missing or untrusted. |
+| 3 | **docker-publish** | `java-docker.yml` | `push`, or same-repo PR (pushes only on `push`) | Builds an OCI image via Spring Boot Buildpacks, **Trivy-scans** it (fails on fixable HIGH/CRITICAL; vuln DB cached via `actions/cache`), emits a **CycloneDX SBOM** artifact, pushes to **GHCR**, **signs** the pushed image with cosign (keyless/OIDC), then prunes old images (keeps the latest 3). |
+| 3 | **verify-image** | `java-release.yml` | push → `main` | Runs `cosign verify` against the exact **digest** `docker-publish` pushed and signed (not a mutable tag) — asserting a keyless signature whose certificate identity matches `signer-identity-regexp` and whose OIDC issuer is GitHub Actions. Fails the release stage if the signature is missing or untrusted. |
 | 4 | **auto-release** | `auto-release.yml` | push → `main`, after `release` succeeds | Bumps a SemVer patch tag, creates a GitHub Release with notes, keeps the latest 10. Gated on `release`, so a failed pipeline never cuts a release. |
 | 5 | **build-gate** | inline | `always()` | Fails the run if any of `build` / `verify` / `release` / `auto-release` failed or was cancelled. The single required status check. |
 
@@ -194,7 +194,7 @@ flowchart TD
 
 ## Configuration
 
-All inputs pass through `master-maven-pipeline.yml`. The most useful ones:
+All inputs pass through `master-java-pipeline.yml`. The most useful ones:
 
 | Input | Default | Purpose |
 |-------|---------|---------|
@@ -231,17 +231,17 @@ pipeline then passes on only what each stage needs:
 ```
 .github/
 ├── workflows/
-│   ├── master-maven-pipeline.yml   # Orchestrator — the entry point consumers call
-│   ├── build.yml                   # Reject .env, compile & package (+ dep graph, push only)
+│   ├── master-java-pipeline.yml   # Orchestrator — the entry point consumers call
+│   ├── java-build.yml                   # Reject .env, compile & package (+ dep graph, push only)
 │   ├── workflow-lint.yml           # actionlint + zizmor over this repo's own YAML
-│   ├── verify.yml                  # Fan-out wrapper: lint + tests + security
-│   ├── lint.yml                    # Spotless formatting check
-│   ├── unit-tests.yml              # Unit tests + JUnit report
-│   ├── integration-tests.yml      # Integration tests + JUnit report
-│   ├── security.yml                # CodeQL (SAST) + Gitleaks (secrets) + Trivy (SCA)
-│   ├── release.yml                 # Fan-out wrapper: tag + docker-publish
+│   ├── java-verify.yml                  # Fan-out wrapper: lint + tests + security
+│   ├── java-lint.yml                    # Spotless formatting check
+│   ├── java-unit-tests.yml              # Unit tests + JUnit report
+│   ├── java-integration-tests.yml      # Integration tests + JUnit report
+│   ├── java-security.yml                # CodeQL (SAST) + Gitleaks (secrets) + Trivy (SCA)
+│   ├── java-release.yml                 # Fan-out wrapper: tag + docker-publish
 │   ├── tag.yml                     # PR build tagging
-│   ├── docker.yml                  # Buildpack image → Trivy → SBOM → GHCR → cosign
+│   ├── java-docker.yml                  # Buildpack image → Trivy → SBOM → GHCR → cosign
 │   └── auto-release.yml            # SemVer tag + GitHub Release (pipeline stage, gated on release)
 ├── actions/
 │   ├── java-setup/                 # Composite: Temurin JDK + Maven cache + MAVEN_OPTS
@@ -306,7 +306,7 @@ pip install yamllint   # not on Chocolatey
   runs `actionlint` and `zizmor` (Actions-specific SAST: template injection, excessive
   permissions, credential persistence) over `.github/**` on every PR, failing on medium+
   findings. The same checks run locally in `pre-push`, but hooks are skippable — CI is not.
-- **Secret scanning** — Gitleaks in CI (`security.yml`) *and* locally (`pre-commit`).
+- **Secret scanning** — Gitleaks in CI (`java-security.yml`) *and* locally (`pre-commit`).
 - **Static analysis (SAST)** — CodeQL for `java-kotlin`.
 - **Dependency scanning (SCA)** — Trivy flags known CVEs in declared/transitive deps;
   the build fails on fixable HIGH/CRITICAL (`ignore-unfixed` skips un-actionable ones).
