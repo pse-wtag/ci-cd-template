@@ -249,7 +249,7 @@ jobs:
 
       - name: GHCR Cleanup (With Auto-retry)
         if: github.event_name != 'pull_request'
-        uses: pse-wtag/java-ci-cd-template/.github/actions/ghcr-cleanup@eab9ecc711576348dafed94089f0afffd2c89106
+        uses: pse-wtag/java-ci-cd-template/.github/actions/ghcr-cleanup@64f19b438fac11f5642012b97e33d0c1deca9f55
         with:
           image-name: ${{ github.event.repository.name }}
           pat-token: ${{ secrets.CR_PAT || github.token }}
