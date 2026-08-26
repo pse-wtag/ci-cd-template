@@ -9,12 +9,4 @@
 
 # Environment files
 *.env
-/.idea/.gitignore
-/.idea/ci-cd-templates.iml
-/.idea/misc.xml
-/.idea/modules.xml
-/.idea/vcs.xml
-/.idea/git_toolbox_prj.xml
-/.idea/java-cicd-template.iml
-/.idea/jsonSchemas.xml
-/.idea/java-ci-cd-template.iml
+.idea
