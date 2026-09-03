@@ -110,7 +110,7 @@ jobs:
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
         with:
-          image: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          image: ghcr.io/${{ github.repository }}@${{ steps.build-and-push.outputs.digest }}
           format: cyclonedx-json
           output-file: sbom.cyclonedx.json
           upload-artifact: false

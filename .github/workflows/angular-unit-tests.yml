@@ -61,4 +61,6 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run Unit Tests
-        run: pnpm run test ${{ inputs.test-args }}
+        env:
+          TEST_ARGS: ${{ inputs.test-args }}
+        run: pnpm run test $TEST_ARGS

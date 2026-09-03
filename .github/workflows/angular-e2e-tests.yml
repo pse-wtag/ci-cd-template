@@ -71,4 +71,6 @@ jobs:
         run: pnpm exec playwright install --with-deps
 
       - name: Run E2E Tests
-        run: pnpm run e2e ${{ inputs.e2e-args }}
+        env:
+          E2E_ARGS: ${{ inputs.e2e-args }}
+        run: pnpm run e2e $E2E_ARGS
