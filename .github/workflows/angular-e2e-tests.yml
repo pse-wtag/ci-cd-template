@@ -73,4 +73,4 @@ jobs:
       - name: Run E2E Tests
         env:
           E2E_ARGS: ${{ inputs.e2e-args }}
-        run: pnpm run e2e $E2E_ARGS
+        run: pnpm run e2e "${E2E_ARGS}"

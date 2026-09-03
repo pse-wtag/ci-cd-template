@@ -63,4 +63,4 @@ jobs:
       - name: Run Unit Tests
         env:
           TEST_ARGS: ${{ inputs.test-args }}
-        run: pnpm run test $TEST_ARGS
+        run: pnpm run test "${TEST_ARGS}"
