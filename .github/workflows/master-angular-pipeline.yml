@@ -1,0 +1,145 @@
+name: Angular Master Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: "24"
+      build-egress-policy:
+        description: >
+          Harden-runner policy for the build + verify (test/security) phases.
+        required: false
+        type: string
+        default: "block"
+      release-egress-policy:
+        description: >
+          Harden-runner policy for the release phase (docker publish + image
+          signature verification).
+        required: false
+        type: string
+        default: "block"
+      extra-build-endpoints:
+        description: Extra endpoints appended to the build phase base allowlist
+        required: false
+        type: string
+        default: ""
+      extra-test-endpoints:
+        description: Extra endpoints appended to the lint/unit/e2e base allowlists
+        required: false
+        type: string
+        default: ""
+      extra-security-endpoints:
+        description: Extra endpoints appended to the security-scan base allowlist
+        required: false
+        type: string
+        default: ""
+      extra-docker-endpoints:
+        description: Extra endpoints appended to the docker-publish and verify-image allowlists
+        required: false
+        type: string
+        default: ""
+      test-args:
+        required: false
+        type: string
+        default: ""
+      e2e-args:
+        required: false
+        type: string
+        default: ""
+      signer-identity-regexp:
+        description: >
+          Regexp the release phase's verify-image job requires the image's
+          keyless Cosign signature to match.
+        required: false
+        type: string
+        default: ""
+    secrets:
+      CR_PAT:
+        description: >
+          Optional PAT for pushing to and cleaning up GHCR. Falls back to the
+          job's GITHUB_TOKEN when not provided.
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    uses: ./.github/workflows/angular-build.yml
+    permissions:
+      contents: read
+    with:
+      node-version: ${{ inputs.node-version }}
+      egress-policy: ${{ inputs.build-egress-policy }}
+      extra-allowed-endpoints: ${{ inputs.extra-build-endpoints }}
+
+  verify:
+    uses: ./.github/workflows/angular-verify.yml
+    permissions:
+      checks: write
+      security-events: write
+      actions: read
+      contents: read
+    with:
+      node-version: ${{ inputs.node-version }}
+      egress-policy: ${{ inputs.build-egress-policy }}
+      extra-test-endpoints: ${{ inputs.extra-test-endpoints }}
+      extra-security-endpoints: ${{ inputs.extra-security-endpoints }}
+      test-args: ${{ inputs.test-args }}
+      e2e-args: ${{ inputs.e2e-args }}
+
+  release:
+    needs:
+      - build
+      - verify
+    uses: ./.github/workflows/angular-release.yml
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    secrets:
+      CR_PAT: ${{ secrets.CR_PAT }}
+    with:
+      node-version: ${{ inputs.node-version }}
+      egress-policy: ${{ inputs.release-egress-policy }}
+      extra-docker-endpoints: ${{ inputs.extra-docker-endpoints }}
+      signer-identity-regexp: ${{ inputs.signer-identity-regexp }}
+
+  build-gate:
+    needs:
+      - build
+      - verify
+      - release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    permissions: {}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: block
+          disable-sudo: true
+
+      - name: Check pipeline result
+        env:
+          BUILD: ${{ needs.build.result }}
+          VERIFY: ${{ needs.verify.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: |
+          RESULTS=("$BUILD" "$VERIFY" "$RELEASE")
+
+          for result in "${RESULTS[@]}"; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "❌ Pipeline failed or was cancelled"
+              exit 1
+            fi
+          done
+
+          echo "✅ Pipeline passed successfully!"

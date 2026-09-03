@@ -25,6 +25,7 @@ This repo was originally Java-only (`java-ci-cd-template`). It has been renamed 
 | Stack | Entry point | Status |
 |-------|-------------|--------|
 | **Java** — Maven + Spring Boot | `master-java-pipeline.yml` | ✅ Shipping — everything below documents it |
+| **Angular** — pnpm + Dockerfile | `master-angular-pipeline.yml` | ✅ Shipping |
 | **.NET / C#** | `master-dotnet-pipeline.yml` | 🚧 Planned |
 | **Python** — pip + Django / FastAPI | `master-python-pipeline.yml` | 🚧 Planned |
 

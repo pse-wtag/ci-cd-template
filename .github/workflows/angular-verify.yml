@@ -1,0 +1,71 @@
+name: Verify
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: "24"
+      egress-policy:
+        required: false
+        type: string
+        default: "block"
+      extra-test-endpoints:
+        description: Extra endpoints appended to the lint/unit/e2e base allowlists
+        required: false
+        type: string
+        default: ""
+      extra-security-endpoints:
+        description: Extra endpoints appended to the security-scan base allowlist
+        required: false
+        type: string
+        default: ""
+      test-args:
+        required: false
+        type: string
+        default: ""
+      e2e-args:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  lint:
+    uses: ./.github/workflows/angular-lint.yml
+    permissions:
+      contents: read
+    with:
+      node-version: ${{ inputs.node-version }}
+      egress-policy: ${{ inputs.egress-policy }}
+      extra-allowed-endpoints: ${{ inputs.extra-test-endpoints }}
+
+  unit-tests:
+    uses: ./.github/workflows/angular-unit-tests.yml
+    permissions:
+      contents: read
+    with:
+      node-version: ${{ inputs.node-version }}
+      egress-policy: ${{ inputs.egress-policy }}
+      extra-allowed-endpoints: ${{ inputs.extra-test-endpoints }}
+      test-args: ${{ inputs.test-args }}
+
+  e2e-tests:
+    uses: ./.github/workflows/angular-e2e-tests.yml
+    permissions:
+      contents: read
+    with:
+      node-version: ${{ inputs.node-version }}
+      egress-policy: ${{ inputs.egress-policy }}
+      extra-allowed-endpoints: ${{ inputs.extra-test-endpoints }}
+      e2e-args: ${{ inputs.e2e-args }}
+
+  security:
+    uses: ./.github/workflows/angular-security.yml
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    with:
+      egress-policy: ${{ inputs.egress-policy }}
+      extra-allowed-endpoints: ${{ inputs.extra-security-endpoints }}
