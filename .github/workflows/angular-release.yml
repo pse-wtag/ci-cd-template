@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: "24"
+      egress-policy:
+        required: false
+        type: string
+        default: "block"
+      extra-docker-endpoints:
+        description: Extra endpoints appended to the docker-publish and verify-image allowlists
+        required: false
+        type: string
+        default: ""
+      signer-identity-regexp:
+        description: >
+          Regexp the published image's keyless Cosign signature must match for
+          verify-image to accept it. Empty defaults to a workflow file under the
+          current repository owner.
+        required: false
+        type: string
+        default: ""
+    secrets:
+      CR_PAT:
+        description: Optional PAT for pushing to and cleaning up GHCR
+        required: false
+
+jobs:
+  tag:
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/tag.yml
+    permissions:
+      contents: write
+
+  docker-publish:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/angular-docker.yml
+    secrets:
+      CR_PAT: ${{ secrets.CR_PAT }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      egress-policy: ${{ inputs.egress-policy }}
+      extra-docker-endpoints: ${{ inputs.extra-docker-endpoints }}
+
+  verify-image:
+    needs: docker-publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          disable-sudo: true
+          allowed-endpoints: >
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            github.com:443
+            api.github.com:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            timestamp.sigstore.dev:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            github-releases.githubusercontent.com:443
+            ${{ inputs.extra-docker-endpoints }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+
+      - name: Verify Image Signature (Keyless)
+        env:
+          IMAGE_DIGEST: ${{ needs.docker-publish.outputs.image-digest }}
+          IDENTITY: ${{ inputs.signer-identity-regexp != '' && inputs.signer-identity-regexp || format('^https://github.com/{0}/.*\.yml@.*', github.repository_owner) }}
+          ISSUER: "https://token.actions.githubusercontent.com"
+        run: |
+          if [ -z "$IMAGE_DIGEST" ]; then
+            echo "::error::docker-publish produced no image digest to verify"
+            exit 1
+          fi
+
+          echo "Verifying $IMAGE_DIGEST"
+          cosign verify \
+            --certificate-identity-regexp "$IDENTITY" \
+            --certificate-oidc-issuer "$ISSUER" \
+            "$IMAGE_DIGEST"

@@ -1,0 +1,76 @@
+name: E2E Tests Module
+
+on:
+  workflow_call:
+    inputs:
+      egress-policy:
+        description: Harden runner policy (audit or block)
+        required: false
+        type: string
+        default: "block"
+      allowed-endpoints:
+        description: Allowed endpoints when policy is block
+        required: false
+        type: string
+        default: >
+          github.com:443
+          registry.npmjs.org:443
+          api.github.com:443
+          playwright.azureedge.net:443
+          packages.microsoft.com:443
+          fonts.gstatic.com:443
+          archive.ubuntu.com:80
+          security.ubuntu.com:80
+          ppa.launchpadcontent.net:443
+      extra-allowed-endpoints:
+        description: Extra endpoints appended to allowed-endpoints (base list stays intact)
+        required: false
+        type: string
+        default: ""
+      node-version:
+        required: false
+        type: string
+        default: "24"
+      e2e-args:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          # Playwright install --with-deps requires sudo
+          disable-sudo: false
+          allowed-endpoints: >
+            ${{ inputs.allowed-endpoints }}
+            ${{ inputs.extra-allowed-endpoints }}
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Browsers
+        run: pnpm exec playwright install --with-deps
+
+      - name: Run E2E Tests
+        env:
+          E2E_ARGS: ${{ inputs.e2e-args }}
+        run: pnpm run e2e "${E2E_ARGS}"

@@ -1,0 +1,66 @@
+name: Unit Tests Module
+
+on:
+  workflow_call:
+    inputs:
+      egress-policy:
+        description: Harden runner policy (audit or block)
+        required: false
+        type: string
+        default: "block"
+      allowed-endpoints:
+        description: Allowed endpoints when policy is block
+        required: false
+        type: string
+        default: >
+          github.com:443
+          registry.npmjs.org:443
+          api.github.com:443
+      extra-allowed-endpoints:
+        description: Extra endpoints appended to allowed-endpoints (base list stays intact)
+        required: false
+        type: string
+        default: ""
+      node-version:
+        required: false
+        type: string
+        default: "24"
+      test-args:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  unit-tests:
+    name: Unit Tests (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          disable-sudo: true
+          allowed-endpoints: >
+            ${{ inputs.allowed-endpoints }}
+            ${{ inputs.extra-allowed-endpoints }}
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Unit Tests
+        env:
+          TEST_ARGS: ${{ inputs.test-args }}
+        run: pnpm run test "${TEST_ARGS}"

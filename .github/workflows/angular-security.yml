@@ -1,0 +1,191 @@
+name: Security Scan Module
+
+on:
+  workflow_call:
+    inputs:
+      egress-policy:
+        description: Harden runner policy (audit or block)
+        required: false
+        type: string
+        default: "block"
+      allowed-endpoints:
+        description: Allowed endpoints when policy is block
+        required: false
+        type: string
+        default: >
+          api.github.com:443
+          github.com:443
+          ghcr.io:443
+          pkg-containers.githubusercontent.com:443
+          release-assets.githubusercontent.com:443
+          uploads.github.com:443
+          objects.githubusercontent.com:443
+          github-releases.githubusercontent.com:443
+          raw.githubusercontent.com:443
+          check.trivy.dev:443
+          get.trivy.dev:443
+          timestamp.sigstore.dev:443
+          mirror.gcr.io:443
+      extra-allowed-endpoints:
+        description: Extra endpoints appended to allowed-endpoints (base list stays intact)
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  codeql:
+    name: CodeQL Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          disable-sudo: true
+          allowed-endpoints: >
+            ${{ inputs.allowed-endpoints }}
+            ${{ inputs.extra-allowed-endpoints }}
+
+      - name: Check code scanning availability
+        id: code-scanning
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/code-scanning/alerts?per_page=1" \
+            || echo "000")
+
+          case "$STATUS" in
+            200|404)
+              echo "enabled=true" >> "$GITHUB_OUTPUT"
+              ;;
+            403)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::Code Scanning is disabled for this repository (HTTP 403); skipping CodeQL analysis."
+              ;;
+            *)
+              echo "::error::Could not determine Code Scanning availability (HTTP ${STATUS}). Refusing to silently skip SAST."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        if: steps.code-scanning.outputs.enabled == 'true'
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3
+        with:
+          languages: javascript-typescript
+
+      - name: Perform CodeQL Analysis
+        if: steps.code-scanning.outputs.enabled == 'true'
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3
+        with:
+          category: "/language:javascript-typescript"
+
+  gitleaks:
+    name: Gitleaks Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          disable-sudo: true
+          allowed-endpoints: >
+            ${{ inputs.allowed-endpoints }}
+            ${{ inputs.extra-allowed-endpoints }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trivy-deps:
+    name: Dependency Vulnerability Scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40
+        with:
+          egress-policy: ${{ inputs.egress-policy }}
+          disable-sudo: true
+          allowed-endpoints: >
+            ${{ inputs.allowed-endpoints }}
+            ${{ inputs.extra-allowed-endpoints }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Resolve Trivy DB cache date
+        id: trivy-date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Trivy vulnerability DB
+        id: trivy-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ github.workspace }}/.cache/trivy
+          key: trivy-db-${{ steps.trivy-date.outputs.date }}
+          restore-keys: |
+            trivy-db-
+
+      - name: Trivy dependency scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+
+      - name: Trivy full report (non-blocking)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: false
+          exit-code: '0'
+          format: table
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+
+      - name: Save Trivy vulnerability DB
+        if: github.ref == 'refs/heads/main' && steps.trivy-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ github.workspace }}/.cache/trivy
+          key: trivy-db-${{ steps.trivy-date.outputs.date }}
